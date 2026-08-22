@@ -1,6 +1,7 @@
 const STRIP_MAX_PHOTOS = 3;
-const STATUS_POLL_MS = 350;
-const CAPTURE_POLL_MS = 1000;
+const CAPTURE_FPS = 15;
+const JPEG_QUALITY = 0.75;
+const RECONNECT_DELAY_MS = 1500;
 
 const STATE_LABELS = {
   tracking: "posicione 2 mãos para enquadrar",
@@ -8,9 +9,14 @@ const STATE_LABELS = {
   puzzle: "organize o puzzle com pinça",
 };
 
+const videoEl = document.getElementById("webcam");
+const captureCanvas = document.getElementById("captureCanvas");
+const captureCtx = captureCanvas.getContext("2d", { willReadFrequently: true });
 const videoFeed = document.getElementById("videoFeed");
+
 const connectionOverlay = document.getElementById("connectionOverlay");
 const loaderText = document.getElementById("loaderText");
+const loaderRetry = document.getElementById("loaderRetry");
 const errorBanner = document.getElementById("errorBanner");
 
 const statusDot = document.getElementById("statusDot");
@@ -25,8 +31,13 @@ const downloadStripBtn = document.getElementById("downloadStripBtn");
 const resetAllBtn = document.getElementById("resetAllBtn");
 const stripCompleteMsg = document.getElementById("stripCompleteMsg");
 
-let knownCaptureIds = new Set();
+let ws = null;
+let wsReady = false;
+let captureTimer = null;
+let firstFrameReceived = false;
+let currentFrameUrl = null;
 let latestCaptures = [];
+let awaitingFrame = false;
 
 function showError(message) {
   errorBanner.textContent = message;
@@ -37,16 +48,120 @@ function hideError() {
   errorBanner.style.display = "none";
 }
 
-videoFeed.addEventListener("load", () => {
-  connectionOverlay.classList.add("hidden");
-  hideError();
-});
-
-videoFeed.addEventListener("error", () => {
-  loaderText.textContent = "não foi possível conectar ao stream do backend. verifique se app.py está rodando.";
+function showLoaderError(message) {
+  loaderText.textContent = message;
+  loaderText.style.color = "#e0533d";
+  loaderRetry.classList.remove("hidden");
   connectionOverlay.classList.remove("hidden");
-  showError("stream de vídeo indisponível — reinicie o servidor FastAPI.");
-});
+}
+
+function resetLoaderUI(message) {
+  loaderText.style.color = "";
+  loaderText.textContent = message;
+  loaderRetry.classList.add("hidden");
+  connectionOverlay.classList.remove("hidden");
+}
+
+// ------------------------------------------------------------------
+// Câmera do navegador (getUserMedia)
+// ------------------------------------------------------------------
+async function initWebcam() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Este navegador não suporta getUserMedia.");
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+    audio: false,
+  });
+  videoEl.srcObject = stream;
+
+  await new Promise((resolve) => {
+    videoEl.onloadedmetadata = () => {
+      videoEl.play();
+      resolve();
+    };
+  });
+
+  captureCanvas.width = videoEl.videoWidth;
+  captureCanvas.height = videoEl.videoHeight;
+}
+
+function captureAndSendFrame() {
+  if (!wsReady || awaitingFrame) return;
+  if (videoEl.readyState < 2) return;
+
+  captureCtx.drawImage(videoEl, 0, 0, captureCanvas.width, captureCanvas.height);
+  captureCanvas.toBlob(
+    (blob) => {
+      if (!blob || ws.readyState !== WebSocket.OPEN) return;
+      awaitingFrame = true;
+      ws.send(blob);
+    },
+    "image/jpeg",
+    JPEG_QUALITY
+  );
+}
+
+// ------------------------------------------------------------------
+// WebSocket com o backend (envia frames, recebe overlay + status)
+// ------------------------------------------------------------------
+function wsUrl() {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/ws`;
+}
+
+function connectWebSocket() {
+  ws = new WebSocket(wsUrl());
+  ws.binaryType = "blob";
+
+  ws.onopen = () => {
+    wsReady = true;
+    hideError();
+    resetLoaderUI("conectado — aguardando primeiro frame...");
+    if (!captureTimer) {
+      captureTimer = setInterval(captureAndSendFrame, 1000 / CAPTURE_FPS);
+    }
+  };
+
+  ws.onmessage = (event) => {
+    if (event.data instanceof Blob) {
+      awaitingFrame = false;
+      const url = URL.createObjectURL(event.data);
+      const prevUrl = currentFrameUrl;
+      videoFeed.src = url;
+      currentFrameUrl = url;
+      if (prevUrl) URL.revokeObjectURL(prevUrl);
+
+      if (!firstFrameReceived) {
+        firstFrameReceived = true;
+        connectionOverlay.classList.add("hidden");
+      }
+    } else {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "status") {
+          updateStatusUI(payload);
+          if (payload.captures) {
+            renderGalleryFromCaptures(payload.captures);
+          }
+        }
+      } catch (err) {
+        // ignora mensagens malformadas
+      }
+    }
+  };
+
+  ws.onclose = () => {
+    wsReady = false;
+    awaitingFrame = false;
+    showError("conexão com o backend perdida — reconectando...");
+    setTimeout(connectWebSocket, RECONNECT_DELAY_MS);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
 
 function updateStatusUI(status) {
   const label = STATE_LABELS[status.state] || status.state;
@@ -70,21 +185,9 @@ function updateStatusUI(status) {
   }
 }
 
-async function pollStatus() {
-  try {
-    const res = await fetch("/status", { cache: "no-store" });
-    if (res.ok) {
-      const status = await res.json();
-      updateStatusUI(status);
-      hideError();
-    }
-  } catch (err) {
-    showError("perdi conexão com o backend — tentando reconectar...");
-  } finally {
-    setTimeout(pollStatus, STATUS_POLL_MS);
-  }
-}
-
+// ------------------------------------------------------------------
+// Galeria
+// ------------------------------------------------------------------
 function renderGalleryThumb(capture, index) {
   const print = document.createElement("div");
   print.className = "print";
@@ -116,31 +219,15 @@ function updateStripDownloadAvailability() {
 
 function renderGalleryFromCaptures(captures) {
   latestCaptures = captures;
-  const newIds = new Set(captures.map((c) => c.id));
-
-  const isFreshSet =
-    captures.length < knownCaptureIds.size ||
-    [...knownCaptureIds].some((id) => !newIds.has(id));
-
-  if (isFreshSet) {
-    galleryStrip.innerHTML = "";
-    galleryStrip.appendChild(galleryEmpty);
-  }
+  galleryStrip.innerHTML = "";
+  galleryStrip.appendChild(galleryEmpty);
 
   if (captures.length === 0) {
     galleryEmpty.style.display = "block";
     hideStripComplete();
   } else {
     galleryEmpty.style.display = "none";
-    if (isFreshSet) {
-      captures.forEach((capture, i) => renderGalleryThumb(capture, i + 1));
-    } else {
-      captures.forEach((capture, i) => {
-        if (!knownCaptureIds.has(capture.id)) {
-          renderGalleryThumb(capture, i + 1);
-        }
-      });
-    }
+    captures.forEach((capture, i) => renderGalleryThumb(capture, i + 1));
     if (captures.length >= STRIP_MAX_PHOTOS) {
       showStripComplete();
     } else {
@@ -148,23 +235,8 @@ function renderGalleryFromCaptures(captures) {
     }
   }
 
-  knownCaptureIds = newIds;
   galleryCount.textContent = `${captures.length} / ${STRIP_MAX_PHOTOS}`;
   updateStripDownloadAvailability();
-}
-
-async function pollCaptures() {
-  try {
-    const res = await fetch("/capture", { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json();
-      renderGalleryFromCaptures(data.captures || []);
-    }
-  } catch (err) {
-    // silencioso: pollStatus já reporta problemas de conexão
-  } finally {
-    setTimeout(pollCaptures, CAPTURE_POLL_MS);
-  }
 }
 
 function loadImage(src) {
@@ -224,21 +296,10 @@ async function downloadPhotoStrip() {
   }, "image/png");
 }
 
-async function resetEverything() {
-  try {
-    await fetch("/reset", { method: "POST" });
-  } catch (err) {
-    showError("não foi possível resetar — verifique a conexão com o backend.");
-    return;
+function resetEverything() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "reset_all" }));
   }
-  knownCaptureIds = new Set();
-  latestCaptures = [];
-  galleryStrip.innerHTML = "";
-  galleryStrip.appendChild(galleryEmpty);
-  galleryEmpty.style.display = "block";
-  galleryCount.textContent = `0 / ${STRIP_MAX_PHOTOS}`;
-  hideStripComplete();
-  updateStripDownloadAvailability();
   statusText.textContent = "sistema reiniciado";
 }
 
@@ -251,5 +312,29 @@ resetAllBtn.addEventListener("click", () => {
   if (confirmed) resetEverything();
 });
 
-pollStatus();
-pollCaptures();
+loaderRetry.addEventListener("click", () => {
+  boot();
+});
+
+async function boot() {
+  resetLoaderUI("solicitando acesso à câmera...");
+  hideError();
+
+  try {
+    if (!videoEl.srcObject) {
+      await initWebcam();
+    }
+    resetLoaderUI("conectando ao servidor...");
+    connectWebSocket();
+  } catch (err) {
+    if (err && err.name === "NotAllowedError") {
+      showLoaderError("Permissão de câmera negada. Habilite-a nas configurações do navegador e tente novamente.");
+    } else if (err && err.name === "NotFoundError") {
+      showLoaderError("Nenhuma webcam disponível foi encontrada.");
+    } else {
+      showLoaderError((err && err.message) || "Erro ao iniciar a câmera.");
+    }
+  }
+}
+
+boot();

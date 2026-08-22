@@ -1,14 +1,13 @@
 import base64
+import json
 import math
 import random
-import threading
 import time
-from contextlib import asynccontextmanager
 
 import cv2
 import mediapipe as mp
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse, StreamingResponse
+import numpy as np
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 # ------------------------------------------------------------------
@@ -27,42 +26,8 @@ FRAME_PADDING = 40
 MIN_BOX_SIZE = 140
 ARM_HOLD_SECONDS = 0.3  # tempo de pinça dupla sustentada antes de iniciar o countdown
 
-# ------------------------------------------------------------------
-# MediaPipe Hands
-# ------------------------------------------------------------------
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(
-    static_image_mode=False,
-    max_num_hands=2,
-    min_detection_confidence=0.6,
-    min_tracking_confidence=0.6,
-)
 mp_draw = mp.solutions.drawing_utils
-
-# ------------------------------------------------------------------
-# Estado compartilhado (protegido por locks) entre a thread da câmera
-# e as rotas da API
-# ------------------------------------------------------------------
-frame_lock = threading.Lock()
-latest_jpeg = None
-
-state_lock = threading.Lock()
-app_state = "tracking"  # tracking | countdown | puzzle
-countdown_start = 0
-arm_start = None
-board_box = None
-puzzle_pieces = []
-last_captured_roi = None
-active_piece = None
-drag_offset_x = 0
-drag_offset_y = 0
-fist_start = None
-status_text = "iniciando..."
-
-gallery_lock = threading.Lock()
-gallery = []  # [{ "id", "image": base64 jpg, "tiles": [base64, ...] }]
-
-_stop_event = threading.Event()
 
 
 def dist(p1, p2):
@@ -109,7 +74,7 @@ def to_px(landmark, w, h):
     return (int(landmark.x * w), int(landmark.y * h))
 
 
-def encode_jpeg(img, quality=85):
+def encode_jpeg(img, quality=80):
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, quality])
     if not ok:
         return None
@@ -161,326 +126,345 @@ def build_puzzle_pieces(captured_roi, bx, by, bw, bh):
     return pieces
 
 
-def save_completed_capture(captured_roi, pieces):
-    tiles_b64 = []
-    for piece in sorted(pieces, key=lambda p: (p["row"], p["col"])):
-        b64 = to_b64_jpeg(piece["img"])
-        if b64:
-            tiles_b64.append(b64)
+# ------------------------------------------------------------------
+# Sessão por conexão: cada cliente envia seus próprios frames da câmera
+# (getUserMedia no navegador), então cada WebSocket tem seu próprio
+# estado de jogo e sua própria instância do MediaPipe Hands — evita
+# misturar o rastreamento de mãos entre visitantes diferentes.
+# ------------------------------------------------------------------
+class PuzzleSession:
+    def __init__(self):
+        self.hands = mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=2,
+            min_detection_confidence=0.6,
+            min_tracking_confidence=0.6,
+        )
+        self.app_state = "tracking"  # tracking | countdown | puzzle
+        self.countdown_start = 0
+        self.arm_start = None
+        self.board_box = None
+        self.puzzle_pieces = []
+        self.last_captured_roi = None
+        self.active_piece = None
+        self.drag_offset_x = 0
+        self.drag_offset_y = 0
+        self.fist_start = None
+        self.gallery = []  # [{ "id", "image": base64 jpg, "tiles": [base64, ...] }]
+        self.gallery_dirty = True
 
-    full_b64 = to_b64_jpeg(captured_roi)
-    if full_b64 is None:
-        return
+    def close(self):
+        self.hands.close()
 
-    with gallery_lock:
-        gallery.append({
+    def save_completed_capture(self):
+        if self.last_captured_roi is None:
+            return
+        tiles_b64 = []
+        for piece in sorted(self.puzzle_pieces, key=lambda p: (p["row"], p["col"])):
+            b64 = to_b64_jpeg(piece["img"])
+            if b64:
+                tiles_b64.append(b64)
+
+        full_b64 = to_b64_jpeg(self.last_captured_roi)
+        if full_b64 is None:
+            return
+
+        self.gallery.append({
             "id": int(time.time() * 1000),
             "image": full_b64,
             "tiles": tiles_b64,
         })
-        if len(gallery) > GALLERY_MAX:
-            gallery.pop(0)
-
-
-def camera_worker():
-    global app_state, countdown_start, arm_start, board_box, puzzle_pieces
-    global last_captured_roi, active_piece, drag_offset_x, drag_offset_y
-    global fist_start, status_text, latest_jpeg
-
-    cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    cap.set(cv2.CAP_PROP_FPS, 60)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-    font = cv2.FONT_HERSHEY_SIMPLEX
-
-    while not _stop_event.is_set():
-        ret, frame = cap.read()
-        if not ret:
-            time.sleep(0.02)
-            continue
-
-        frame = cv2.flip(frame, 1)
-        h, w, _ = frame.shape
-
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = hands.process(rgb_frame)
-        hands_detected = results.multi_hand_landmarks
-
-        cv2.putText(frame, "MOTION PUZZLE - AR BOOTH", (40, 50), font, 0.7, NEON_GREEN, 2, cv2.LINE_AA)
-
-        with state_lock:
-            state = app_state
-
-        if state == "tracking":
-            local_status = "Posicione 2 maos para enquadrar"
-
-            if hands_detected and len(hands_detected) == 2:
-                for hand_lms in hands_detected:
-                    mp_draw.draw_landmarks(frame, hand_lms, mp_hands.HAND_CONNECTIONS)
-
-                lm0 = hands_detected[0].landmark[8]
-                lm1 = hands_detected[1].landmark[8]
-                px_a = to_px(lm0, w, h)
-                px_b = to_px(lm1, w, h)
-
-                x1, y1, x2, y2 = compute_dynamic_box(px_a, px_b, w, h)
-                box_w, box_h = x2 - x1, y2 - y1
-
-                if box_w >= MIN_BOX_SIZE and box_h >= MIN_BOX_SIZE:
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), NEON_PURPLE, 3)
-                    cv2.circle(frame, px_a, 8, NEON_PURPLE, -1)
-                    cv2.circle(frame, px_b, 8, NEON_PURPLE, -1)
-
-                    pincando_0 = dist((hands_detected[0].landmark[4].x, hands_detected[0].landmark[4].y),
-                                       (lm0.x, lm0.y)) < PINCH_THRESHOLD
-                    pincando_1 = dist((hands_detected[1].landmark[4].x, hands_detected[1].landmark[4].y),
-                                       (lm1.x, lm1.y)) < PINCH_THRESHOLD
-
-                    if pincando_0 and pincando_1:
-                        if arm_start is None:
-                            arm_start = cv2.getTickCount()
-                        armed_elapsed = (cv2.getTickCount() - arm_start) / cv2.getTickFrequency()
-                        local_status = "segure a pinça..."
-
-                        if armed_elapsed >= ARM_HOLD_SECONDS:
-                            with state_lock:
-                                app_state = "countdown"
-                                countdown_start = cv2.getTickCount()
-                                board_box = (x1, y1, box_w, box_h)
-                            arm_start = None
-                    else:
-                        arm_start = None
-                        local_status = "pinça dupla para capturar"
-                else:
-                    arm_start = None
-            else:
-                arm_start = None
-
-            cv2.putText(frame, local_status, (40, 90), font, 0.5, CREAM, 1, cv2.LINE_AA)
-
-        elif state == "countdown":
-            elapsed = (cv2.getTickCount() - countdown_start) / cv2.getTickFrequency()
-            remaining = 3 - int(elapsed)
-            bx, by, bw, bh = board_box
-
-            if remaining > 0:
-                cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), NEON_PURPLE, 3)
-                cv2.putText(frame, f"CAPTURANDO EM {remaining}...", (bx + 20, by + bh // 2), font, 1.1,
-                            NEON_PURPLE, 3, cv2.LINE_AA)
-            else:
-                captured_roi = frame[by:by + bh, bx:bx + bw].copy()
-                captured_roi = aplicar_efeito_foto(captured_roi)
-                last_captured_roi = captured_roi
-
-                pieces = build_puzzle_pieces(captured_roi, bx, by, bw, bh)
-
-                with state_lock:
-                    puzzle_pieces = pieces
-                    app_state = "puzzle"
-                    fist_start = None
-
-        elif state == "puzzle":
-            cv2.putText(frame, "ORGANIZE O PUZZLE COM PINCA", (40, 90), font, 0.5, NEON_GREEN, 1, cv2.LINE_AA)
-
-            bx, by, bw, bh = board_box
-            cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (0, 0, 0), -1)
-
-            pinching = False
-            index_px = (0, 0)
-
-            if hands_detected:
-                for hand_lms in hands_detected:
-                    mp_draw.draw_landmarks(frame, hand_lms, mp_hands.HAND_CONNECTIONS)
-
-                first_hand = hands_detected[0].landmark
-                index_tip = first_hand[8]
-                thumb_tip = first_hand[4]
-
-                index_px = to_px(index_tip, w, h)
-                pinching = dist((thumb_tip.x, thumb_tip.y), (index_tip.x, index_tip.y)) < PINCH_THRESHOLD
-
-            if pinching:
-                if active_piece is None:
-                    best_piece = None
-                    best_dist = None
-                    for piece in puzzle_pieces:
-                        if piece["placed"]:
-                            continue
-                        px, py, pw, ph = piece["current_x"], piece["current_y"], piece["w"], piece["h"]
-                        if px <= index_px[0] <= px + pw and py <= index_px[1] <= py + ph:
-                            center = (px + pw / 2, py + ph / 2)
-                            d = dist(index_px, center)
-                            if best_dist is None or d < best_dist:
-                                best_dist = d
-                                best_piece = piece
-
-                    if best_piece is not None:
-                        active_piece = best_piece
-                        drag_offset_x = index_px[0] - active_piece["current_x"]
-                        drag_offset_y = index_px[1] - active_piece["current_y"]
-                else:
-                    target_x = index_px[0] - drag_offset_x
-                    target_y = index_px[1] - drag_offset_y
-                    active_piece["current_x"] = int(active_piece["current_x"] + (target_x - active_piece["current_x"]) * DRAG_SMOOTHING)
-                    active_piece["current_y"] = int(active_piece["current_y"] + (target_y - active_piece["current_y"]) * DRAG_SMOOTHING)
-            else:
-                if active_piece is not None:
-                    tile_w = bw // GRID_SIZE
-                    tile_h = bh // GRID_SIZE
-
-                    cx = active_piece["current_x"] + active_piece["w"] / 2
-                    cy = active_piece["current_y"] + active_piece["h"] / 2
-
-                    target_col = min(GRID_SIZE - 1, max(0, int((cx - bx) // tile_w)))
-                    target_row = min(GRID_SIZE - 1, max(0, int((cy - by) // tile_h)))
-
-                    origin_row = active_piece["slot_row"]
-                    origin_col = active_piece["slot_col"]
-                    origin_x = bx + origin_col * tile_w
-                    origin_y = by + origin_row * tile_h
-
-                    occupant = None
-                    if target_row != origin_row or target_col != origin_col:
-                        for piece in puzzle_pieces:
-                            if piece is active_piece:
-                                continue
-                            if piece["slot_row"] == target_row and piece["slot_col"] == target_col:
-                                occupant = piece
-                                break
-
-                    if occupant is not None:
-                        occupant["slot_row"], occupant["slot_col"] = origin_row, origin_col
-                        occupant["current_x"] = origin_x
-                        occupant["current_y"] = origin_y
-                        occupant["placed"] = (origin_row == occupant["row"] and origin_col == occupant["col"])
-
-                    active_piece["slot_row"] = target_row
-                    active_piece["slot_col"] = target_col
-                    active_piece["current_x"] = bx + target_col * tile_w
-                    active_piece["current_y"] = by + target_row * tile_h
-                    active_piece["placed"] = (target_row == active_piece["row"] and target_col == active_piece["col"])
-
-                    active_piece = None
-
-            for piece in puzzle_pieces:
-                px, py = piece["current_x"], piece["current_y"]
-                pw, ph = piece["w"], piece["h"]
-
-                px = max(bx, min(px, bx + bw - pw))
-                py = max(by, min(py, by + bh - ph))
-                piece["current_x"], piece["current_y"] = px, py
-
-                frame[py:py + ph, px:px + pw] = piece["img"]
-
-                borda_color = NEON_GREEN if piece["placed"] else CREAM
-                if piece == active_piece:
-                    borda_color = NEON_PURPLE
-
-                cv2.rectangle(frame, (px, py), (px + pw, py + ph), borda_color, 2)
-
-            cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), NEON_PURPLE, 3)
-
-            solved = all(p["placed"] for p in puzzle_pieces)
-            if solved:
-                cv2.putText(frame, "COMPLETO! PUNHO FECHADO PARA SALVAR", (bx, by - 15), font, 0.6, NEON_GREEN, 2, cv2.LINE_AA)
-
-                fist_now = bool(hands_detected) and any(is_fist(hl.landmark) for hl in hands_detected)
-
-                if fist_now:
-                    if fist_start is None:
-                        fist_start = cv2.getTickCount()
-                    fist_elapsed = (cv2.getTickCount() - fist_start) / cv2.getTickFrequency()
-
-                    bar_w = int(bw * min(fist_elapsed / FIST_HOLD_SECONDS, 1.0))
-                    cv2.rectangle(frame, (bx, by + bh + 10), (bx + bar_w, by + bh + 25), NEON_PURPLE, -1)
-                    cv2.rectangle(frame, (bx, by + bh + 10), (bx + bw, by + bh + 25), NEON_GREEN, 2)
-
-                    if fist_elapsed >= FIST_HOLD_SECONDS:
-                        if last_captured_roi is not None:
-                            save_completed_capture(last_captured_roi, puzzle_pieces)
-
-                        with state_lock:
-                            app_state = "tracking"
-                            puzzle_pieces = []
-                            board_box = None
-                        active_piece = None
-                        fist_start = None
-                else:
-                    fist_start = None
-
-        jpg = encode_jpeg(frame)
-        if jpg is not None:
-            with frame_lock:
-                latest_jpeg = jpg
-
-        time.sleep(1 / 60)
-
-    cap.release()
-
-
-def mjpeg_stream():
-    boundary = b"--frame\r\n"
-    while True:
-        with frame_lock:
-            jpg = latest_jpeg
-        if jpg is None:
-            time.sleep(0.03)
-            continue
-        yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
-        time.sleep(1 / 30)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    worker = threading.Thread(target=camera_worker, daemon=True)
-    worker.start()
-    yield
-    _stop_event.set()
-    worker.join(timeout=2)
-
-
-app = FastAPI(title="Motion Puzzle - AR Booth", lifespan=lifespan)
-
-
-@app.get("/video_feed")
-def video_feed():
-    return StreamingResponse(mjpeg_stream(), media_type="multipart/x-mixed-replace; boundary=frame")
-
-
-@app.get("/capture")
-def get_captures():
-    with gallery_lock:
-        return JSONResponse({"captures": list(gallery)})
-
-
-@app.get("/status")
-def get_status():
-    with state_lock:
-        placed = sum(1 for p in puzzle_pieces if p["placed"])
-        total = len(puzzle_pieces)
-        return {
-            "state": app_state,
+        if len(self.gallery) > GALLERY_MAX:
+            self.gallery.pop(0)
+        self.gallery_dirty = True
+
+    def reset(self):
+        self.app_state = "tracking"
+        self.countdown_start = 0
+        self.arm_start = None
+        self.board_box = None
+        self.puzzle_pieces = []
+        self.last_captured_roi = None
+        self.active_piece = None
+        self.fist_start = None
+
+    def reset_all(self):
+        self.reset()
+        self.gallery = []
+        self.gallery_dirty = True
+
+    def status_payload(self):
+        placed = sum(1 for p in self.puzzle_pieces if p["placed"])
+        total = len(self.puzzle_pieces)
+        payload = {
+            "type": "status",
+            "state": self.app_state,
             "placed": placed,
             "total": total,
             "solved": total > 0 and placed == total,
         }
+        if self.gallery_dirty:
+            payload["captures"] = self.gallery
+            self.gallery_dirty = False
+        return payload
 
 
-@app.post("/reset")
-def reset_system():
-    global app_state, puzzle_pieces, board_box, active_piece, fist_start, last_captured_roi
-    with gallery_lock:
-        gallery.clear()
-    with state_lock:
-        app_state = "tracking"
-        puzzle_pieces = []
-        board_box = None
-    active_piece = None
-    fist_start = None
-    last_captured_roi = None
-    return {"ok": True}
+FONT = cv2.FONT_HERSHEY_SIMPLEX
+
+
+def process_frame(session: PuzzleSession, frame):
+    """Processa um frame enviado pelo navegador (imagem já em BGR/OpenCV):
+    roda o MediaPipe Hands, avança a máquina de estado do puzzle e desenha
+    o overlay Neon Cyberpunk. Retorna o frame processado."""
+    frame = cv2.flip(frame, 1)  # espelha, como uma webcam frontal
+    h, w, _ = frame.shape
+
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = session.hands.process(rgb_frame)
+    hands_detected = results.multi_hand_landmarks
+
+    cv2.putText(frame, "MOTION PUZZLE - AR BOOTH", (40, 50), FONT, 0.7, NEON_GREEN, 2, cv2.LINE_AA)
+
+    state = session.app_state
+
+    if state == "tracking":
+        local_status = "Posicione 2 maos para enquadrar"
+
+        if hands_detected and len(hands_detected) == 2:
+            for hand_lms in hands_detected:
+                mp_draw.draw_landmarks(frame, hand_lms, mp_hands.HAND_CONNECTIONS)
+
+            lm0 = hands_detected[0].landmark[8]
+            lm1 = hands_detected[1].landmark[8]
+            px_a = to_px(lm0, w, h)
+            px_b = to_px(lm1, w, h)
+
+            x1, y1, x2, y2 = compute_dynamic_box(px_a, px_b, w, h)
+            box_w, box_h = x2 - x1, y2 - y1
+
+            if box_w >= MIN_BOX_SIZE and box_h >= MIN_BOX_SIZE:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), NEON_PURPLE, 3)
+                cv2.circle(frame, px_a, 8, NEON_PURPLE, -1)
+                cv2.circle(frame, px_b, 8, NEON_PURPLE, -1)
+
+                pincando_0 = dist((hands_detected[0].landmark[4].x, hands_detected[0].landmark[4].y),
+                                   (lm0.x, lm0.y)) < PINCH_THRESHOLD
+                pincando_1 = dist((hands_detected[1].landmark[4].x, hands_detected[1].landmark[4].y),
+                                   (lm1.x, lm1.y)) < PINCH_THRESHOLD
+
+                if pincando_0 and pincando_1:
+                    if session.arm_start is None:
+                        session.arm_start = cv2.getTickCount()
+                    armed_elapsed = (cv2.getTickCount() - session.arm_start) / cv2.getTickFrequency()
+                    local_status = "segure a pinça..."
+
+                    if armed_elapsed >= ARM_HOLD_SECONDS:
+                        session.app_state = "countdown"
+                        session.countdown_start = cv2.getTickCount()
+                        session.board_box = (x1, y1, box_w, box_h)
+                        session.arm_start = None
+                else:
+                    session.arm_start = None
+                    local_status = "pinça dupla para capturar"
+            else:
+                session.arm_start = None
+        else:
+            session.arm_start = None
+
+        cv2.putText(frame, local_status, (40, 90), FONT, 0.5, CREAM, 1, cv2.LINE_AA)
+
+    elif state == "countdown":
+        elapsed = (cv2.getTickCount() - session.countdown_start) / cv2.getTickFrequency()
+        remaining = 3 - int(elapsed)
+        bx, by, bw, bh = session.board_box
+
+        if remaining > 0:
+            cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), NEON_PURPLE, 3)
+            cv2.putText(frame, f"CAPTURANDO EM {remaining}...", (bx + 20, by + bh // 2), FONT, 1.1,
+                        NEON_PURPLE, 3, cv2.LINE_AA)
+        else:
+            captured_roi = frame[by:by + bh, bx:bx + bw].copy()
+            captured_roi = aplicar_efeito_foto(captured_roi)
+            session.last_captured_roi = captured_roi
+            session.puzzle_pieces = build_puzzle_pieces(captured_roi, bx, by, bw, bh)
+            session.app_state = "puzzle"
+            session.fist_start = None
+
+    elif state == "puzzle":
+        cv2.putText(frame, "ORGANIZE O PUZZLE COM PINCA", (40, 90), FONT, 0.5, NEON_GREEN, 1, cv2.LINE_AA)
+
+        bx, by, bw, bh = session.board_box
+        cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (0, 0, 0), -1)
+
+        pinching = False
+        index_px = (0, 0)
+
+        if hands_detected:
+            for hand_lms in hands_detected:
+                mp_draw.draw_landmarks(frame, hand_lms, mp_hands.HAND_CONNECTIONS)
+
+            first_hand = hands_detected[0].landmark
+            index_tip = first_hand[8]
+            thumb_tip = first_hand[4]
+
+            index_px = to_px(index_tip, w, h)
+            pinching = dist((thumb_tip.x, thumb_tip.y), (index_tip.x, index_tip.y)) < PINCH_THRESHOLD
+
+        if pinching:
+            if session.active_piece is None:
+                best_piece = None
+                best_dist = None
+                for piece in session.puzzle_pieces:
+                    if piece["placed"]:
+                        continue
+                    px, py, pw, ph = piece["current_x"], piece["current_y"], piece["w"], piece["h"]
+                    if px <= index_px[0] <= px + pw and py <= index_px[1] <= py + ph:
+                        center = (px + pw / 2, py + ph / 2)
+                        d = dist(index_px, center)
+                        if best_dist is None or d < best_dist:
+                            best_dist = d
+                            best_piece = piece
+
+                if best_piece is not None:
+                    session.active_piece = best_piece
+                    session.drag_offset_x = index_px[0] - best_piece["current_x"]
+                    session.drag_offset_y = index_px[1] - best_piece["current_y"]
+            else:
+                active_piece = session.active_piece
+                target_x = index_px[0] - session.drag_offset_x
+                target_y = index_px[1] - session.drag_offset_y
+                active_piece["current_x"] = int(active_piece["current_x"] + (target_x - active_piece["current_x"]) * DRAG_SMOOTHING)
+                active_piece["current_y"] = int(active_piece["current_y"] + (target_y - active_piece["current_y"]) * DRAG_SMOOTHING)
+        else:
+            if session.active_piece is not None:
+                active_piece = session.active_piece
+                tile_w = bw // GRID_SIZE
+                tile_h = bh // GRID_SIZE
+
+                cx = active_piece["current_x"] + active_piece["w"] / 2
+                cy = active_piece["current_y"] + active_piece["h"] / 2
+
+                target_col = min(GRID_SIZE - 1, max(0, int((cx - bx) // tile_w)))
+                target_row = min(GRID_SIZE - 1, max(0, int((cy - by) // tile_h)))
+
+                origin_row = active_piece["slot_row"]
+                origin_col = active_piece["slot_col"]
+                origin_x = bx + origin_col * tile_w
+                origin_y = by + origin_row * tile_h
+
+                occupant = None
+                if target_row != origin_row or target_col != origin_col:
+                    for piece in session.puzzle_pieces:
+                        if piece is active_piece:
+                            continue
+                        if piece["slot_row"] == target_row and piece["slot_col"] == target_col:
+                            occupant = piece
+                            break
+
+                if occupant is not None:
+                    occupant["slot_row"], occupant["slot_col"] = origin_row, origin_col
+                    occupant["current_x"] = origin_x
+                    occupant["current_y"] = origin_y
+                    occupant["placed"] = (origin_row == occupant["row"] and origin_col == occupant["col"])
+
+                active_piece["slot_row"] = target_row
+                active_piece["slot_col"] = target_col
+                active_piece["current_x"] = bx + target_col * tile_w
+                active_piece["current_y"] = by + target_row * tile_h
+                active_piece["placed"] = (target_row == active_piece["row"] and target_col == active_piece["col"])
+
+                session.active_piece = None
+
+        for piece in session.puzzle_pieces:
+            px, py = piece["current_x"], piece["current_y"]
+            pw, ph = piece["w"], piece["h"]
+
+            px = max(bx, min(px, bx + bw - pw))
+            py = max(by, min(py, by + bh - ph))
+            piece["current_x"], piece["current_y"] = px, py
+
+            frame[py:py + ph, px:px + pw] = piece["img"]
+
+            borda_color = NEON_GREEN if piece["placed"] else CREAM
+            if piece is session.active_piece:
+                borda_color = NEON_PURPLE
+
+            cv2.rectangle(frame, (px, py), (px + pw, py + ph), borda_color, 2)
+
+        cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), NEON_PURPLE, 3)
+
+        solved = all(p["placed"] for p in session.puzzle_pieces)
+        if solved:
+            cv2.putText(frame, "COMPLETO! PUNHO FECHADO PARA SALVAR", (bx, by - 15), FONT, 0.6, NEON_GREEN, 2, cv2.LINE_AA)
+
+            fist_now = bool(hands_detected) and any(is_fist(hl.landmark) for hl in hands_detected)
+
+            if fist_now:
+                if session.fist_start is None:
+                    session.fist_start = cv2.getTickCount()
+                fist_elapsed = (cv2.getTickCount() - session.fist_start) / cv2.getTickFrequency()
+
+                bar_w = int(bw * min(fist_elapsed / FIST_HOLD_SECONDS, 1.0))
+                cv2.rectangle(frame, (bx, by + bh + 10), (bx + bar_w, by + bh + 25), NEON_PURPLE, -1)
+                cv2.rectangle(frame, (bx, by + bh + 10), (bx + bw, by + bh + 25), NEON_GREEN, 2)
+
+                if fist_elapsed >= FIST_HOLD_SECONDS:
+                    session.save_completed_capture()
+                    session.app_state = "tracking"
+                    session.puzzle_pieces = []
+                    session.board_box = None
+                    session.active_piece = None
+                    session.fist_start = None
+            else:
+                session.fist_start = None
+
+    return frame
+
+
+app = FastAPI(title="Motion Puzzle - AR Booth")
+
+
+@app.websocket("/ws")
+async def puzzle_ws(websocket: WebSocket):
+    await websocket.accept()
+    session = PuzzleSession()
+
+    try:
+        while True:
+            message = await websocket.receive()
+
+            if message.get("bytes") is not None:
+                data = message["bytes"]
+                np_buf = np.frombuffer(data, dtype=np.uint8)
+                frame = cv2.imdecode(np_buf, cv2.IMREAD_COLOR)
+                if frame is None:
+                    continue
+
+                processed = process_frame(session, frame)
+                jpg = encode_jpeg(processed)
+                if jpg is not None:
+                    await websocket.send_bytes(jpg)
+                await websocket.send_text(json.dumps(session.status_payload()))
+
+            elif message.get("text") is not None:
+                try:
+                    cmd = json.loads(message["text"])
+                except ValueError:
+                    continue
+
+                cmd_type = cmd.get("type")
+                if cmd_type == "reset":
+                    session.reset()
+                    session.gallery_dirty = True
+                    await websocket.send_text(json.dumps(session.status_payload()))
+                elif cmd_type == "reset_all":
+                    session.reset_all()
+                    await websocket.send_text(json.dumps(session.status_payload()))
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        session.close()
 
 
 app.mount("/", StaticFiles(directory=".", html=True), name="static")

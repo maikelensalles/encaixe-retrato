@@ -11,13 +11,15 @@
 <div id="app">
 
   <div id="stage">
-    <img id="videoFeed" src="/video_feed" alt="Motion Puzzle camera feed" />
+    <video id="webcam" playsinline autoplay muted></video>
+    <canvas id="captureCanvas"></canvas>
+    <img id="videoFeed" alt="Motion Puzzle processed feed" />
 
     <div class="hud-top">
-      <div class="brand">MOTION PUZZLE <small>AR booth · backend nativo</small></div>
+      <div class="brand">MOTION PUZZLE <small>AR booth · câmera no navegador</small></div>
       <div class="status-pill">
         <span id="statusDot" class="status-dot"></span>
-        <span id="statusText">conectando ao servidor...</span>
+        <span id="statusText">iniciando câmera...</span>
       </div>
     </div>
 
@@ -26,8 +28,9 @@
     </div>
 
     <div id="connectionOverlay">
-      <div class="loader-text" id="loaderText">conectando à câmera do servidor...</div>
+      <div class="loader-text" id="loaderText">solicitando acesso à câmera...</div>
       <div class="loader-bar"></div>
+      <button type="button" id="loaderRetry" class="loader-retry hidden">tentar novamente</button>
     </div>
 
     <div id="errorBanner"></div>

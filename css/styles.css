@@ -44,6 +44,11 @@ html,body{
   overflow:hidden;
 }
 
+video#webcam,
+canvas#captureCanvas{
+  display:none;
+}
+
 #videoFeed{
   position:absolute;
   top:50%; left:50%;
@@ -203,6 +208,21 @@ html,body{
   0%{ transform:translateX(-100%); }
   100%{ transform:translateX(350%); }
 }
+.loader-retry{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  background:transparent;
+  border:1px solid var(--signal);
+  color:var(--signal);
+  padding:8px 16px;
+  cursor:pointer;
+  transition:background 0.15s, color 0.15s;
+}
+.loader-retry:hover{ background:var(--signal); color:#1a1400; }
+.loader-retry.hidden{ display:none; }
+
 #errorBanner{
   position:absolute;
   top:18px; left:50%;
