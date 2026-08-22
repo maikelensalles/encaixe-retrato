@@ -5,6 +5,8 @@ Uma cabine de fotos interativa de Realidade Aumentada (AR) controlada inteiramen
 Onde o design encontra a visão computacional: O reconhecimento de mãos e a lógica do quebra-cabeça rodam em um backend robusto em Python (OpenCV + MediaPipe), transmitindo a experiência visual em tempo real para uma interface web imersiva e leve.
 
 **Engenharia e Design por [Maikelen Salles](https://maikelen-dev.web.app/)** 
+**[Teste agora na web]([https://maikelen-dev.web.app/](https://motion-puzzle.onrender.com))** 
+
 
 ---
 
