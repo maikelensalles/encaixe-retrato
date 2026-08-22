@@ -1,4 +1,8 @@
-# 🧩 Motion Puzzle
+# 🧩 Motion Puzzle <p align="center">
+  <a href="https://motion-puzzle.onrender.com" target="_blank">
+    <img src="https://img.shields.io/badge/🚀_TESTE_AGORA_NA_WEB-39FF14?style=for-the-badge&color=AD46FF&labelColor=#AD46FF" alt="Teste agora na web">
+  </a>
+</p>
 
 Uma cabine de fotos interativa de Realidade Aumentada (AR) controlada inteiramente por gestos no ar. 
 
@@ -6,8 +10,11 @@ Onde o design encontra a visão computacional: O reconhecimento de mãos e a ló
 
 **Engenharia e Design por [Maikelen Salles](https://maikelen-dev.web.app/)** 
 
----
+<br>
 
+
+
+---
 ## ⚡ **A EXPERIÊNCIA**
 
 O **Motion Puzzle** transforma a sua webcam em um ambiente interativo. Usando a distância entre os dedos indicadores das duas mãos, você "desenha" dinamicamente um quadro neon no ar. 
@@ -29,7 +36,7 @@ Ao fechar um gesto de pinça com as duas mãos, a área é capturada, recebe um 
 
 ### 1. Clonar o ecossistema
 ```bash
-git clone [https://github.com/maikelensalles/motion-puzzle.git](https://github.com/maikelensalles/motion-puzzle.git)
+git clone https://github.com/maikelensalles/motion-puzzle.git
 cd motion-puzzle
 ```
 
