@@ -209,7 +209,15 @@ function fitCanvasToWindow() {
   const stageEl = document.getElementById("stage");
   const vw = stageEl.clientWidth;
   const vh = stageEl.clientHeight;
-  const videoAspect = canvas.width / canvas.height;
+  
+  // Usa as dimensões originais reais do vídeo da webcam
+  const videoW = videoEl.videoWidth || 1280;
+  const videoH = videoEl.videoHeight || 720;
+
+  canvas.width = videoW;
+  canvas.height = videoH;
+
+  const videoAspect = videoW / videoH;
   const containerAspect = vw / vh;
 
   let cssWidth, cssHeight;
@@ -232,20 +240,31 @@ async function initWebcam() {
     throw new Error("Este navegador não suporta getUserMedia.");
   }
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+    video: { 
+      width: { ideal: 1920 }, 
+      height: { ideal: 1080 }, 
+      frameRate: { ideal: 30 },
+      facingMode: "user" 
+    },
     audio: false,
   });
   videoEl.srcObject = stream;
 
+  // Garante que o vídeo começou a reproduzir e tem dimensões válidas
   await new Promise((resolve) => {
     videoEl.onloadedmetadata = () => {
-      videoEl.play();
-      resolve();
+      videoEl.play().then(resolve).catch(resolve);
     };
   });
 
+  // Pequeno loop de segurança caso o navegador demare alguns milissegundos para renderizar os pixels
+  while (videoEl.videoWidth === 0 || videoEl.videoHeight === 0) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
   canvas.width = videoEl.videoWidth;
   canvas.height = videoEl.videoHeight;
+  console.log(`Resolução real da câmera: ${videoEl.videoWidth} x ${videoEl.videoHeight}`);
   fitCanvasToWindow();
 }
 

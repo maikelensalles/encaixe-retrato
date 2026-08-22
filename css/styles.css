@@ -53,6 +53,7 @@ canvas#sceneCanvas{
   top:50%; left:50%;
   transform:translate(-50%,-50%);
   display:block;
+  
 }
 
 
@@ -376,4 +377,39 @@ canvas#sceneCanvas{
   background:var(--danger);
   border-color:var(--danger);
   color:#fff;
+}
+/* --- Ajustes Responsivos para Mobile --- */
+@media (max-width: 768px) {
+  #app {
+    flex-direction: column; /* Empilha o jogo em cima e a galeria embaixo */
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  #stage {
+    width: 100vw;
+    height: 60vh; /* Ocupa 60% da tela superior para a câmera */
+    flex: none;
+  }
+
+  #gallery {
+    width: 100vw;
+    height: 40vh; /* Ocupa os 40% restantes para a galeria rolar embaixo */
+    flex: none;
+    border-left: none;
+    border-top: 1px solid var(--gallery-border);
+  }
+
+  .hud-top {
+    padding: 10px 14px;
+  }
+
+  .brand {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+
+  .brand small {
+    display: none; /* Esconde o texto longo em telas pequenas para não quebrar o layout */
+  }
 }
