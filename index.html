@@ -12,11 +12,10 @@
 
   <div id="stage">
     <video id="webcam" playsinline autoplay muted></video>
-    <canvas id="captureCanvas"></canvas>
-    <img id="videoFeed" alt="Motion Puzzle processed feed" />
+    <canvas id="sceneCanvas"></canvas>
 
     <div class="hud-top">
-      <div class="brand">MOTION PUZZLE <small>AR booth · câmera no navegador</small></div>
+      <div class="brand">MOTION PUZZLE <small>rastreamento 100% no navegador</small></div>
       <div class="status-pill">
         <span id="statusDot" class="status-dot"></span>
         <span id="statusText">iniciando câmera...</span>
@@ -28,7 +27,7 @@
     </div>
 
     <div id="connectionOverlay">
-      <div class="loader-text" id="loaderText">solicitando acesso à câmera...</div>
+      <div class="loader-text" id="loaderText">carregando IA de rastreamento...</div>
       <div class="loader-bar"></div>
       <button type="button" id="loaderRetry" class="loader-retry hidden">tentar novamente</button>
     </div>
