@@ -1,6 +1,6 @@
 # #🧩 Motion Puzzle <p align="center">
   <a href="https://motion-puzzle.onrender.com" target="_blank">
-    <img src="https://img.shields.io/badge/🚀_TESTE_AGORA_NA_WEB-39FF14?style=for-the-badge&color=39FF14&labelColor=#AD46FF" alt="Teste agora na web">
+    <img src="https://img.shields.io/badge/🚀_TESTE_AGORA_NA_WEB-39FF14?style=for-the-badge&color=AD46FF&labelColor=#AD46FF" alt="Teste agora na web">
   </a>
 </p>
 
