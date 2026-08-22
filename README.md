@@ -1,4 +1,4 @@
-# 🧩 Motion Puzzle
+# #🧩 Motion Puzzle
 
 Uma cabine de fotos interativa de Realidade Aumentada (AR) controlada inteiramente por gestos no ar. 
 
@@ -6,11 +6,15 @@ Onde o design encontra a visão computacional: O reconhecimento de mãos e a ló
 
 **Engenharia e Design por [Maikelen Salles](https://maikelen-dev.web.app/)** 
 
-**[Teste agora na web](https://motion-puzzle.onrender.com)** 
+<br>
 
+<p align="center">
+  <a href="https://motion-puzzle.onrender.com" target="_blank">
+    <img src="https://img.shields.io/badge/🚀_TESTE_AGORA_NA_WEB-39FF14?style=for-the-badge&color=39FF14&labelColor=000000" alt="Teste agora na web">
+  </a>
+</p>
 
 ---
-
 ## ⚡ **A EXPERIÊNCIA**
 
 O **Motion Puzzle** transforma a sua webcam em um ambiente interativo. Usando a distância entre os dedos indicadores das duas mãos, você "desenha" dinamicamente um quadro neon no ar. 
