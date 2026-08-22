@@ -36,7 +36,7 @@ Ao fechar um gesto de pinça com as duas mãos, a área é capturada, recebe um 
 
 ### 1. Clonar o ecossistema
 ```bash
-git clone [https://github.com/maikelensalles/motion-puzzle.git](https://github.com/maikelensalles/motion-puzzle.git)
+git clone https://github.com/maikelensalles/motion-puzzle.git
 cd motion-puzzle
 ```
 
