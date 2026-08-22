@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Motion Puzzle — AR Booth</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <div id="stage">
+    <img id="videoFeed" src="/video_feed" alt="Motion Puzzle camera feed" />
+
+    <div class="hud-top">
+      <div class="brand">MOTION PUZZLE <small>AR booth · backend nativo</small></div>
+      <div class="status-pill">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText">conectando ao servidor...</span>
+      </div>
+    </div>
+
+    <div id="progressBadge" class="progress-badge">
+      <span id="progressText">0 / 9 peças encaixadas</span>
+    </div>
+
+    <div id="connectionOverlay">
+      <div class="loader-text" id="loaderText">conectando à câmera do servidor...</div>
+      <div class="loader-bar"></div>
+    </div>
+
+    <div id="errorBanner"></div>
+  </div>
+
+  <aside id="gallery">
+    <div class="gallery-head">
+      <span class="gallery-title">Galeria</span>
+      <span class="gallery-count" id="galleryCount">0 / 3</span>
+    </div>
+
+    <div class="strip-complete-msg" id="stripCompleteMsg">
+      galeria completa — baixe ou reinicie
+    </div>
+
+    <div id="galleryStrip" class="gallery-strip">
+      <div class="gallery-empty" id="galleryEmpty">
+        Seus puzzles resolvidos<br/>aparecerão aqui.
+      </div>
+    </div>
+
+    <div class="gallery-actions">
+      <button type="button" id="downloadStripBtn" class="gallery-action-btn" disabled>baixar imagens</button>
+      <button type="button" id="resetAllBtn" class="gallery-action-btn gallery-action-btn--danger">resetar sistema</button>
+    </div>
+  </aside>
+
+</div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
