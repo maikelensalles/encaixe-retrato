@@ -26,8 +26,8 @@ O Motion Puzzle usa a distância entre os dedos indicadores das duas mãos para 
 ### 1. Clonar o repositório
 
 ```bash
-git clone https://github.com/mishu006/Puzzle.git
-cd Puzzle
+git clone https://github.com/maikelensalles/motion-puzzle.git
+cd motion-puzzle
 ```
 
 ### 2. Instalar as dependências
