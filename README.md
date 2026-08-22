@@ -1,6 +1,8 @@
-# #🧩 Motion Puzzle <a href="https://motion-puzzle.onrender.com" target="_blank">
+# #🧩 Motion Puzzle <p align="center">
+  <a href="https://motion-puzzle.onrender.com" target="_blank">
     <img src="https://img.shields.io/badge/🚀_TESTE_AGORA_NA_WEB-39FF14?style=for-the-badge&color=39FF14&labelColor=000000" alt="Teste agora na web">
   </a>
+</p>
 
 Uma cabine de fotos interativa de Realidade Aumentada (AR) controlada inteiramente por gestos no ar. 
 
@@ -10,9 +12,7 @@ Onde o design encontra a visão computacional: O reconhecimento de mãos e a ló
 
 <br>
 
-<p align="center">
-  
-</p>
+
 
 ---
 ## ⚡ **A EXPERIÊNCIA**
