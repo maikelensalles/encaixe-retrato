@@ -1,32 +1,35 @@
-# Motion Puzzle — AR Booth
+# 🧩 Motion Puzzle
 
-Cabine de fotos controlada por gestos das mãos. O reconhecimento de mãos e a montagem do quebra-cabeça rodam em um backend Python nativo (OpenCV + MediaPipe), transmitidos como vídeo ao vivo para uma interface web leve.
+Uma cabine de fotos interativa de Realidade Aumentada (AR) controlada inteiramente por gestos no ar. 
 
-**Desenvolvido por [Maikelen](https://maikelen-dev.web.app/)**
+Onde o design encontra a visão computacional: O reconhecimento de mãos e a lógica do quebra-cabeça rodam em um backend robusto em Python (OpenCV + MediaPipe), transmitindo a experiência visual em tempo real para uma interface web imersiva e leve.
 
----
-
-## **DESCRIÇÃO**
-
-O Motion Puzzle usa a distância entre os dedos indicadores das duas mãos para desenhar um quadro dinâmico (neon) em volta da cena. Ao fechar a pinça com as duas mãos, a área é capturada, convertida em foto com efeito fotomatón e fatiada em um quebra-cabeça 3x3. As peças são reorganizadas com gestos de pinça (encaixe livre na grade) e, ao completar o desafio, um punho fechado salva o resultado na galeria lateral.
+**Engenharia e Design por [Maikelen Salles](https://maikelen-dev.web.app/)** 
 
 ---
 
-## **REQUISITOS DO SISTEMA**
+## ⚡ **A EXPERIÊNCIA**
 
-- **Sistema operacional:** macOS (usa o backend nativo `AVFoundation` para a câmera)
-- **Python:** 3.9+
+O **Motion Puzzle** transforma a sua webcam em um ambiente interativo. Usando a distância entre os dedos indicadores das duas mãos, você "desenha" dinamicamente um quadro neon no ar. 
+
+Ao fechar um gesto de pinça com as duas mãos, a área é capturada, recebe um filtro vintage de fotomatón e é fatiada em um quebra-cabeça 3x3. A partir daí, a tela é sua: reorganize as peças flutuantes com os dedos e, ao completar o desafio, feche o punho para salvar sua obra na galeria lateral. Sem cliques, sem mouse, apenas movimento.
+
+---
+
+## 🛠 **REQUISITOS DO SISTEMA**
+
+- **Sistema Operacional:** macOS (integrado nativamente com `AVFoundation` para captura de hardware)
+- **Engine:** Python 3.9+
 - **Hardware:** Webcam
-- **Navegador:** Chrome, Edge ou Firefox (apenas para exibir a interface — nenhum processamento de IA roda no navegador)
+- **Interface:** Chrome, Edge ou Firefox (o navegador atua apenas como um "vidro" de exibição; 100% da inteligência artificial roda no backend)
 
 ---
 
-## **INSTALAÇÃO E CONFIGURAÇÃO**
+## 🚀 **STARTUP E CONFIGURAÇÃO**
 
-### 1. Clonar o repositório
-
+### 1. Clonar o ecossistema
 ```bash
-git clone https://github.com/maikelensalles/motion-puzzle.git
+git clone [https://github.com/maikelensalles/motion-puzzle.git](https://github.com/maikelensalles/motion-puzzle.git)
 cd motion-puzzle
 ```
 
