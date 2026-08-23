@@ -303,7 +303,7 @@ async function initHandLandmarker() {
       "Tempo esgotado baixando o modelo HandLandmarker (~10MB) com GPU."
     );
   } catch (gpuErr) {
-    console.warn("[Motion Puzzle] Falhou com delegate GPU, tentando CPU…", gpuErr);
+    console.warn("[Encaixe Retrato] Falhou com delegate GPU, tentando CPU…", gpuErr);
   }
 
   return withTimeout(
@@ -977,7 +977,7 @@ function showLoaderError(message) {
 function resetLoaderUI() {
   connectionOverlay.classList.remove("hidden");
   loaderText.style.color = "";
-  loaderText.textContent = "carregando modelo HandLandmarker...";
+  loaderText.textContent = "Calibrando sensores de movimento...";
   loaderRetry.classList.add("hidden");
   errorBanner.style.display = "none";
 }

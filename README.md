@@ -17,7 +17,7 @@ Onde o design encontra a visão computacional: O reconhecimento de mãos e a ló
 ---
 ## ⚡ **A EXPERIÊNCIA**
 
-O **Motion Puzzle** transforma a sua webcam em um ambiente interativo. Usando a distância entre os dedos indicadores das duas mãos, você "desenha" dinamicamente um quadro neon no ar. 
+O **Encaixe Retrato** transforma a sua webcam em um ambiente interativo. Usando a distância entre os dedos indicadores das duas mãos, você "desenha" dinamicamente um quadro neon no ar. 
 
 Ao fechar um gesto de pinça com as duas mãos, a área é capturada, recebe um filtro vintage de fotomatón e é fatiada em um quebra-cabeça 3x3. A partir daí, a tela é sua: reorganize as peças flutuantes com os dedos e, ao completar o desafio, feche o punho para salvar sua obra na galeria lateral. Sem cliques, sem mouse, apenas movimento.
 
