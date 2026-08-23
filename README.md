@@ -112,7 +112,7 @@ Todo o processamento de visão computacional roda diretamente no navegador, gara
 
 Certifique-se de estar conectado à internet, pois o navegador precisa baixar o modelo do MediaPipe (.task) e o runtime WASM na primeira execução.
 
-### **Permissão de câmera negada"**
+### **Permissão de câmera negada**
 
 Verifique se você não bloqueou o acesso acidentalmente. No ícone de cadeado ao lado da barra de endereço do navegador, permita o uso da câmera e recarregue a página.
 
