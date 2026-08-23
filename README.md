@@ -33,6 +33,7 @@ Ao fechar um gesto de pinça com as duas mãos, a área é capturada, recebe um 
 ---
 
 ## 🚀 **STARTUP E CONFIGURAÇÃO**
+Como o projeto é uma aplicação estática (Serverless), rodar o projeto localmente é extremamente simples:
 
 ### 1. Clonar o ecossistema
 ```bash
@@ -40,43 +41,38 @@ git clone https://github.com/maikelensalles/encaixe-retrato.git
 cd encaixe-retrato
 ```
 
-### 2. Instalar as dependências
+### 2. Rodar localmente
+Você pode usar qualquer servidor estático de sua preferência.
+
+Usando Node.js (npx):
 
 ```bash
-pip install fastapi uvicorn opencv-python mediapipe numpy python-multipart
+npx serve
 ```
+Ou usando a extensão Live Server no VSCode.
 
-### 3. Iniciar o servidor
+### 3. Abrir no navegador
 
 ```bash
-uvicorn app:app --reload --port 8000
+Acesse o link gerado no terminal (geralmente http://localhost:3000 ou 8000). Permita o acesso à câmera quando o navegador solicitar
 ```
-
-### 4. Abrir no navegador
-
-```
-http://localhost:8000
-```
-
-Permita o acesso à câmera quando o sistema operacional solicitar (o backend acessa a webcam diretamente).
 
 ---
 
-## **ESTRUTURA DO PROJETO**
+## **📂 ESTRUTURA DO PROJETO**
 
 ```
-Puzzle/
-├── app.py             # Backend FastAPI: captura, MediaPipe, streaming MJPEG e API
-├── index.html          # Interface web (consome o stream de vídeo)
-├── app.js               # Polling de status/galeria e ações da UI
+encaixe-retrato/
+├── index.html       # Interface web (UI e overlay da câmera)
+├── app.js           # Lógica do MediaPipe, controle de gestos e física do Canvas
 ├── css/
-│   └── styles.css       # Tema Neon Cyberpunk
-└── .gitignore
+│   └── styles.css   # Tema Neon Cyberpunk responsivo (Desktop & Mobile)
+└── README.md
 ```
 
 ---
 
-## **GESTOS DE CONTROLE**
+## **🖐 GESTOS DE CONTROLE**
 
 | Gesto | Ação |
 |---|---|
@@ -88,7 +84,7 @@ Puzzle/
 
 ---
 
-## **LÓGICA DA APLICAÇÃO**
+## **🧠 LÓGICA DA APLICAÇÃO**
 
 1. Mostre as duas mãos à câmera — o quadro roxo neon acompanha a distância entre os indicadores.
 2. Feche a pinça com as duas mãos e segure para iniciar a contagem regressiva.
@@ -99,46 +95,44 @@ Puzzle/
 
 ---
 
-## **STACK TECNOLÓGICO**
+## **💻 STACK TECNOLÓGICO**
 
-- **Python** + **OpenCV** — captura de câmera (`AVFoundation`) e composição visual
-- **MediaPipe Hands** — detecção dos landmarks das mãos
-- **FastAPI** — API HTTP e streaming MJPEG (`/video_feed`, `/status`, `/capture`, `/reset`)
-- **JavaScript (vanilla)** — interface web, sem frameworks
-- **CSS Custom Properties** — tema Neon Cyberpunk
+- **JavaScript (vanilla)** — Controle de estado e física, sem frameworks
+- **MediaPipe Tasks Vision** — IA de detecção de mãos carregada via CDN e executada na GPU do usuário
+- **HTML5 Canvas & getUserMedia API** — Captura de vídeo nativa e manipulação de pixels em tempo real com alta definição (DPR adjustment)
+- **CSS3 Custom Properties** — Sistema de design responsivo com Media Queries adaptadas para Mobile
 
-Todo o processamento de visão computacional roda no backend; o navegador apenas exibe o vídeo (`<img>`) e consome a API.
+Todo o processamento de visão computacional roda diretamente no navegador, garantindo total privacidade (nenhuma imagem é enviada a servidores externos)
 
 ---
 
-## **GUIA DE SOLUÇÃO DE PROBLEMAS**
+## **⚠️ GUIA DE SOLUÇÃO DE PROBLEMAS**
 
-### **A câmera não liga**
+### **O carregamento da IA trava no infinito**
 
-Verifique se nenhum outro aplicativo (Teams, Zoom, Discord, etc.) está usando a câmera em segundo plano, e se o terminal/IDE tem permissão de câmera concedida em Preferências do Sistema → Privacidade.
+Certifique-se de estar conectado à internet, pois o navegador precisa baixar o modelo do MediaPipe (.task) e o runtime WASM na primeira execução.
 
-### **A página mostra "stream de vídeo indisponível"**
+### **Permissão de câmera negada"**
 
-Confirme que o servidor `uvicorn` está rodando e acessível em `http://localhost:8000`.
+Verifique se você não bloqueou o acesso acidentalmente. No ícone de cadeado ao lado da barra de endereço do navegador, permita o uso da câmera e recarregue a página.
 
 ### **O gesto de pinça não é detectado**
 
 Garanta boa iluminação e que ambas as mãos estejam visíveis para a câmera. Aproxime bem a ponta do indicador e do polegar.
 
-### **A galeria não atualiza**
+### **A câmera não liga (Erro NotAllowedError / NotFoundError)**
 
-A interface consulta `/status` e `/capture` periodicamente — verifique o console do navegador e os logs do backend para erros de conexão.
+Confirme se o site está rodando em um ambiente seguro (localhost ou protocolo https://). Navegadores bloqueiam câmeras em HTTP comum.
 
 ---
 
-## **COMPATIBILIDADE DE NAVEGADORES**
+## **📱 COMPATIBILIDADE DE NAVEGADORES**
 
 | Navegador | Suporte |
 |---|---|
 | Chrome / Edge | Recomendado |
 | Firefox | Compatível |
 | Safari | Compatível |
-| Mobile | Limitado (recomendado em desktop) |
 
 ---
 
