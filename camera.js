@@ -3,34 +3,14 @@ export const canvas = document.getElementById("sceneCanvas");
 export const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
 export function fitCanvasToWindow() {
-  const stageEl = document.getElementById("stage");
-  const vw = stageEl.clientWidth;
-  const vh = stageEl.clientHeight;
-
-  // Usa as dimensões originais reais do vídeo da webcam
   const videoW = videoEl.videoWidth || 1280;
   const videoH = videoEl.videoHeight || 720;
 
+  // A resolução interna do canvas acompanha a resolução nativa da câmera
+  // (usada pelo mediapipe e pelo crop do puzzle). O preenchimento visual
+  // de tela cheia, sem tarjas, é feito via CSS (object-fit: cover).
   canvas.width = videoW;
   canvas.height = videoH;
-
-  // Escala "contain" (sem corte, pode sobrar borda) e "cover" (preenche tudo, corta o excesso).
-  const scaleContain = Math.min(vw / videoW, vh / videoH);
-  const scaleCover = Math.max(vw / videoW, vh / videoH);
-
-  // Quando a proporção da câmera diverge muito da proporção da tela
-  // (ex: câmera 16:9 numa tela de celular em retrato), um "cover" puro
-  // corta demais as laterais e o usuário precisa se afastar para caber
-  // no quadro. Limitamos o zoom a um fator sobre o "contain" para manter
-  // um campo de visão confortável, aceitando uma leve sobra nas bordas.
-  const MAX_ZOOM_OVER_CONTAIN = 1.25;
-  const scale = Math.min(scaleCover, scaleContain * MAX_ZOOM_OVER_CONTAIN);
-
-  const cssWidth = videoW * scale;
-  const cssHeight = videoH * scale;
-
-  canvas.style.width = `${cssWidth}px`;
-  canvas.style.height = `${cssHeight}px`;
 }
 
 window.addEventListener("resize", fitCanvasToWindow);
@@ -43,7 +23,11 @@ export async function initWebcam() {
   // isso faz o sensor entregar vídeo vertical nativamente, evitando o corte
   // agressivo das laterais que acontecia ao forçar sempre 1920x1080 (16:9 landscape).
   const isPortrait = window.innerHeight >= window.innerWidth;
-  const idealAspectRatio = window.innerWidth / window.innerHeight;
+  // Proporção real da tela do usuário: orienta o navegador a buscar no
+  // hardware a lente/resolução mais próxima do formato físico da tela,
+  // reduzindo ao máximo o zoom artificial do object-fit: cover.
+  const aspect = window.innerHeight / window.innerWidth;
+  const idealAspectRatio = isPortrait ? aspect : 1 / aspect;
 
   const videoConstraints = isPortrait
     ? {

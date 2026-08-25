@@ -18,7 +18,7 @@ export const DANGER = "#e0533d";
 
 export const PINCH_THRESHOLD = 0.05;
 export const FRAME_PADDING = 40;
-export const MIN_BOX_SIZE = 140;
+export const MIN_BOX_RATIO = 0.3;
 export const ARM_HOLD_MS = 300;
 export const COUNTDOWN_SECONDS = 3;
 export const FIST_HOLD_MS = 1500;

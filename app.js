@@ -1,4 +1,4 @@
-import { LOAD_TIMEOUT_MS, MIN_BOX_SIZE, ARM_HOLD_MS, FRAME_GRACE_MS, LM } from "./config.js";
+import { LOAD_TIMEOUT_MS, ARM_HOLD_MS, FRAME_GRACE_MS, LM } from "./config.js";
 import { videoEl, canvas, ctx, initWebcam } from "./camera.js";
 import { initHandLandmarker } from "./vision.js";
 import {
@@ -13,6 +13,7 @@ import {
   toPixel,
   mirrorLandmarkX,
   computeHandFrame,
+  getMinBoxSize,
   startCountdown,
   drawCountdownOverlay,
   applyPhotoboothInsideBox,
@@ -100,8 +101,9 @@ function processResults(result) {
       const indexA = mirrorLandmarkX(handA[LM.INDEX_TIP]);
       const indexB = mirrorLandmarkX(handB[LM.INDEX_TIP]);
       const frameBox = computeHandFrame(indexA, indexB);
+      const minBoxSize = getMinBoxSize();
 
-      if (frameBox.width >= MIN_BOX_SIZE && frameBox.height >= MIN_BOX_SIZE) {
+      if (frameBox.width >= minBoxSize && frameBox.height >= minBoxSize) {
         applyPhotoboothInsideBox(frameBox);
         drawLiveFrameOverlay(frameBox);
         lastSeenFrame.box = frameBox;

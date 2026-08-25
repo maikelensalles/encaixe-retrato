@@ -5,6 +5,7 @@ import {
   CREAM,
   PINCH_THRESHOLD,
   FRAME_PADDING,
+  MIN_BOX_RATIO,
   COUNTDOWN_SECONDS,
   FIST_HOLD_MS,
   GRID,
@@ -94,8 +95,17 @@ export function mirrorLandmarkX(landmark) {
   return { x: 1 - landmark.x, y: landmark.y };
 }
 
-// Enquadramento dinâmico: retângulo entre os dois indicadores, que cresce
-// ou encolhe conforme a distância entre as mãos.
+// Menor dimensão do enquadramento aceito, proporcional à resolução real
+// da câmera (em vez de um valor fixo em pixels, que fica minúsculo em
+// resoluções verticais altas ou grande demais em resoluções baixas).
+export function getMinBoxSize() {
+  return MIN_BOX_RATIO * Math.min(canvas.width, canvas.height);
+}
+
+// Enquadramento dinâmico: quadrado centralizado entre os dois indicadores,
+// que cresce ou encolhe conforme a distância entre as mãos. É forçado a
+// ser quadrado para que o board e as peças do puzzle (GRID x GRID) não
+// saiam deformados.
 export function computeHandFrame(indexTipA, indexTipB) {
   const a = toPixel(indexTipA);
   const b = toPixel(indexTipB);
@@ -105,12 +115,21 @@ export function computeHandFrame(indexTipA, indexTipB) {
   const minY = Math.min(a.y, b.y) - FRAME_PADDING;
   const maxY = Math.max(a.y, b.y) + FRAME_PADDING;
 
-  const x = Math.max(0, minX);
-  const y = Math.max(0, minY);
-  const width = Math.min(canvas.width, maxX) - x;
-  const height = Math.min(canvas.height, maxY) - y;
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const side = Math.min(
+    canvas.width,
+    canvas.height,
+    Math.max(maxX - minX, maxY - minY)
+  );
 
-  return { x, y, width, height };
+  let x = centerX - side / 2;
+  let y = centerY - side / 2;
+
+  x = Math.min(Math.max(x, 0), canvas.width - side);
+  y = Math.min(Math.max(y, 0), canvas.height - side);
+
+  return { x, y, width: side, height: side };
 }
 
 export function startCountdown(frameBox) {
